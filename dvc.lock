@@ -1,0 +1,26 @@
+schema: '2.0'
+stages:
+  preprocess:
+    cmd: python src/data/preprocess.py
+    deps:
+    - path: data/raw/student_scores.csv
+      hash: md5
+      md5: 5ec911f38385c6c51268e8444633d497
+      size: 214
+    outs:
+    - path: data/processed/train.csv
+      hash: md5
+      md5: d30b6128bb4a8f90db47a5bb8ce5c3bc
+      size: 550
+  train:
+    cmd: python src/model/train.py
+    deps:
+    - path: data/processed/train.csv
+      hash: md5
+      md5: d30b6128bb4a8f90db47a5bb8ce5c3bc
+      size: 550
+    outs:
+    - path: models/model_v1.pkl
+      hash: md5
+      md5: 5692323e56129fda645ddbaafbb09d5e
+      size: 1361
