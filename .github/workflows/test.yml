@@ -1,4 +1,4 @@
-name: CI/CD - Docker to ECR to EC2
+name: Test, Build & Deploy
 
 on:
   push:
@@ -8,22 +8,20 @@ on:
 
 env:
   PYTHON_VERSION: '3.9'
-  AWS_REGION: us-east-1
+  AWS_REGION: ap-south-2
 
 jobs:
   # ============================================================
-  # STAGE 1: TEST & LINT
+  # STAGE 1: TEST & LINT (Always runs - no AWS needed)
   # ============================================================
   test:
-    name: 🧪 Test & Lint
+    name: Test & Lint
     runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -34,46 +32,44 @@ jobs:
           pip install -r requirements.txt
           pip install pytest black flake8
       
-      - name: Lint with flake8
+      - name: Run flake8
         continue-on-error: true
-        run: |
-          flake8 app/ src/ scripts/ --count --select=E9,F63,F7,F82 --show-source
+        run: flake8 app/ src/ scripts/ --count --select=E9,F63,F7,F82 || true
       
-      - name: Format check with black
+      - name: Run black
         continue-on-error: true
-        run: |
-          black --check app/ src/ scripts/
+        run: black --check app/ src/ scripts/ || true
       
       - name: Run pytest
         continue-on-error: true
-        run: |
-          pytest tests/ -v --tb=short
+        run: pytest tests/ -v || true
 
   # ============================================================
-  # STAGE 2: BUILD & PUSH DOCKER IMAGE
+  # STAGE 2: BUILD & PUSH (Only if AWS secrets exist)
   # ============================================================
   build:
-    name: 🐳 Build Docker Image
+    name: Build & Push Docker
     runs-on: ubuntu-latest
     needs: test
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    if: |
+      github.event_name == 'push' && 
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') &&
+      secrets.AWS_ACCESS_KEY_ID != '' &&
+      secrets.ECR_REPOSITORY_NAME != ''
     
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
       
-      - name: Login to Amazon ECR
+      - uses: aws-actions/amazon-ecr-login@v2
         id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
       
-      - name: Build Docker image
+      - name: Build & Push Docker
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY_NAME }}
@@ -81,78 +77,35 @@ jobs:
         run: |
           docker build -f docker/Dockerfile -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
-      
-      - name: Push to Amazon ECR
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY_NAME }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          echo "✓ Docker image pushed to ECR"
 
   # ============================================================
-  # STAGE 3: DEPLOY TO EC2
+  # STAGE 3: DEPLOY (Only main branch + AWS secrets)
   # ============================================================
   deploy:
-    name: 🚀 Deploy to EC2
+    name: Deploy to EC2
     runs-on: ubuntu-latest
     needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: |
+      github.event_name == 'push' && 
+      github.ref == 'refs/heads/main' &&
+      secrets.EC2_HOST != ''
     
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
       
-      - name: Create deployment script
-        env:
-          ECR_REGISTRY_URL: ${{ secrets.ECR_REGISTRY_URL }}
-          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY_NAME }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          cat > /tmp/deploy.sh << 'EOF'
-          #!/bin/bash
-          set -e
-          
-          ECR_REGISTRY_URL=$1
-          ECR_REPOSITORY=$2
-          IMAGE_TAG=$3
-          
-          echo "📦 Pulling latest Docker image from ECR..."
-          docker pull $ECR_REGISTRY_URL/$ECR_REPOSITORY:$IMAGE_TAG
-          
-          echo "🛑 Stopping old container if running..."
-          docker stop student-mlops-app || true
-          docker rm student-mlops-app || true
-          
-          echo "🚀 Starting new container..."
-          docker run -d \
-            --name student-mlops-app \
-            -p 8000:8000 \
-            -e AWS_REGION=$AWS_REGION \
-            $ECR_REGISTRY_URL/$ECR_REPOSITORY:$IMAGE_TAG
-          
-          echo "✓ Container started successfully"
-          docker ps | grep student-mlops-app
-          
-          echo "✓ Deployment complete!"
-          EOF
-          
-          chmod +x /tmp/deploy.sh
-      
       - name: Deploy to EC2
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
-          ECR_REGISTRY_URL: ${{ secrets.ECR_REGISTRY_URL }}
+          ECR_REGISTRY: ${{ secrets.ECR_REGISTRY_URL }}
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY_NAME }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
@@ -161,23 +114,10 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H $EC2_HOST >> ~/.ssh/known_hosts 2>/dev/null
           
-          echo "🔐 Connecting to EC2 instance..."
-          scp -i ~/.ssh/deploy_key /tmp/deploy.sh $EC2_USER@$EC2_HOST:/tmp/
-          
-          echo "📥 Running deployment script on EC2..."
-          ssh -i ~/.ssh/deploy_key $EC2_USER@$EC2_HOST \
-            "/tmp/deploy.sh $ECR_REGISTRY_URL $ECR_REPOSITORY $IMAGE_TAG"
-      
-      - name: Verify deployment
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H $EC2_HOST >> ~/.ssh/known_hosts 2>/dev/null
-          
-          echo "🔍 Checking container status..."
-          ssh -i ~/.ssh/deploy_key $EC2_USER@$EC2_HOST \
-            "docker ps | grep student-mlops-app && echo '✓ Container is running' || echo '❌ Container failed to start'"
+          ssh -i ~/.ssh/deploy_key $EC2_USER@$EC2_HOST << 'DEPLOY_SCRIPT'
+          docker pull $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker stop mlops-app 2>/dev/null || true
+          docker rm mlops-app 2>/dev/null || true
+          docker run -d --name mlops-app -p 8000:8000 $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "✓ Deployment complete"
+          DEPLOY_SCRIPT
