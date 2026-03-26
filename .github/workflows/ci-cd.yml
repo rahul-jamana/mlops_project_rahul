@@ -44,7 +44,12 @@ jobs:
       
       - name: Run unit tests
         run: |
-          pytest test_*.py -v --cov=app --cov=src --cov-report=xml 2>/dev/null || echo "Tests not available"
+          if [ -d "tests" ]; then
+            pytest tests/ -v --cov=app --cov=src --cov-report=xml
+          else
+            echo "No tests/ directory found. Skipping unit tests."
+          fi
+        continue-on-error: true
       
       - name: Upload coverage reports
         uses: codecov/codecov-action@v3
