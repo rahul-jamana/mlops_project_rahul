@@ -53,11 +53,12 @@ jobs:
       
       - name: Upload coverage reports
         uses: codecov/codecov-action@v3
-        if: always()
+        if: always() && hashFiles('./coverage.xml') != ''
         with:
           files: ./coverage.xml
           flags: unittests
           name: codecov-umbrella
+          fail_ci_if_error: false
 
   build:
     name: Build & Push Docker Image
