@@ -67,12 +67,11 @@ def train():
     X = df[["Hours", "hours_squared"]]
     y = df["Scores"]
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
 
-    pipeline = Pipeline([
-        ("scaler", StandardScaler()),
-        ("model", LinearRegression())
-    ])
+    pipeline = Pipeline([("scaler", StandardScaler()), ("model", LinearRegression())])
 
     pipeline.fit(X_train, y_train)
 
@@ -83,7 +82,9 @@ def train():
     try:
         download_file(S3_BUCKET, MODEL_META_KEY, MODEL_META_PATH)
     except Exception:
-        print("[INFO] No existing model metadata on S3, first deployment or no prior metadata.")
+        print(
+            "[INFO] No existing model metadata on S3, first deployment or no prior metadata."
+        )
 
     # Evaluate old model if available
     old_model = load_existing_model()
@@ -103,7 +104,9 @@ def train():
         version = "v1"
     elif new_mse <= old_mse:
         promote = True
-        version = "v{:.0f}".format((float(old_r2 or 0) + 1) if old_r2 is not None else 1)
+        version = "v{:.0f}".format(
+            (float(old_r2 or 0) + 1) if old_r2 is not None else 1
+        )
     else:
         promote = False
         version = "older"
@@ -136,4 +139,3 @@ def train():
 if __name__ == "__main__":
     stats = train()
     print(f"[SUMMARY] {stats}")
-

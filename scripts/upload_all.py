@@ -11,11 +11,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from src.utils.s3_utils import upload_file
 from src.utils.s3_config import (
-    RAW_DATA_PATH, RAW_DATA_KEY,
-    PROCESSED_DATA_PATH, PROCESSED_DATA_KEY,
-    MODEL_PATH, MODEL_KEY,
-    S3_BUCKET
+    RAW_DATA_PATH,
+    RAW_DATA_KEY,
+    PROCESSED_DATA_PATH,
+    PROCESSED_DATA_KEY,
+    MODEL_PATH,
+    MODEL_KEY,
+    S3_BUCKET,
 )
+
 
 def upload_all():
     files_to_upload = [
@@ -50,6 +54,7 @@ def upload_all():
     print("=" * 60)
 
     return failed_count == 0
+
 
 if __name__ == "__main__":
     success = upload_all()

@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from src.utils.s3_utils import get_s3_client
 from src.utils.s3_config import S3_BUCKET, RAW_DATA_KEY, PROCESSED_DATA_KEY, MODEL_KEY
 
+
 def verify_s3_files():
     """Check which files exist in S3"""
     s3 = get_s3_client()
@@ -33,7 +34,7 @@ def verify_s3_files():
         for s3_key, name in files_to_check:
             try:
                 obj = s3.head_object(Bucket=S3_BUCKET, Key=s3_key)
-                size_mb = obj['ContentLength'] / (1024 * 1024)
+                size_mb = obj["ContentLength"] / (1024 * 1024)
                 print(f"[OK] {name}")
                 print(f"     Path: s3://{S3_BUCKET}/{s3_key}")
                 print(f"     Size: {size_mb:.2f} MB")
@@ -54,6 +55,7 @@ def verify_s3_files():
         print(f"[ERROR] Could not connect to S3: {e}")
         print("Check AWS credentials and bucket name")
         return False
+
 
 if __name__ == "__main__":
     verify_s3_files()

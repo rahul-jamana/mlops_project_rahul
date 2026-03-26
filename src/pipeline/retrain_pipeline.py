@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 
+
 def retrain():
     old = pd.read_csv("data/processed/train.csv")
     new = pd.read_csv("data/new/new_data.csv")
@@ -11,6 +12,7 @@ def retrain():
     df.to_csv("data/processed/train.csv", index=False)
 
     os.system("python src/model/train.py")
+
 
 if __name__ == "__main__":
     retrain()

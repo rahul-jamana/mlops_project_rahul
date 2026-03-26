@@ -51,6 +51,7 @@ def append_data(existing_file, new_file, output_file):
         print(f"[ERROR] Failed to append data: {e}")
         return False
 
+
 def replace_data(old_file, new_file, backup=True):
     """Replace old data with new data (with backup)"""
     print(f"\n[MODE] REPLACE: Replacing old data with new data")
@@ -81,7 +82,9 @@ def replace_data(old_file, new_file, backup=True):
 def get_combined_df(mode, new_file, output_file):
     """Compute what combined data would look like (no side effects)."""
     if mode == "append":
-        existing_df = pd.read_csv(output_file) if os.path.exists(output_file) else pd.DataFrame()
+        existing_df = (
+            pd.read_csv(output_file) if os.path.exists(output_file) else pd.DataFrame()
+        )
         new_df = pd.read_csv(new_file)
         combined_df = pd.concat([existing_df, new_df], ignore_index=True)
         combined_df = combined_df.drop_duplicates()
@@ -103,7 +106,9 @@ def run_retrain_if_needed(row_count, dry_run=False, threshold=21):
         print("[DRY RUN] Would run: python scripts/retrain_pipeline.py")
         return True
 
-    result = subprocess.run([sys.executable, "scripts/retrain_pipeline.py"], check=False)
+    result = subprocess.run(
+        [sys.executable, "scripts/retrain_pipeline.py"], check=False
+    )
     if result.returncode == 0:
         print("[OK] Retraining pipeline completed successfully.")
         return True
@@ -113,16 +118,32 @@ def run_retrain_if_needed(row_count, dry_run=False, threshold=21):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Handle new data and trigger retraining")
-    parser.add_argument("--mode", choices=["append", "replace"], default="replace",
-                       help="How to handle new data (append or replace)")
+    parser = argparse.ArgumentParser(
+        description="Handle new data and trigger retraining"
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["append", "replace"],
+        default="replace",
+        help="How to handle new data (append or replace)",
+    )
     parser.add_argument("--file", required=True, help="Path to new data file")
-    parser.add_argument("--output", default="data/raw/student_scores.csv",
-                       help="Output file path (default: data/raw/student_scores.csv)")
-    parser.add_argument("--dry-run", action="store_true",
-                       help="Do not modify files or run retrain; show what would happen")
-    parser.add_argument("--repeat", type=int, default=1,
-                       help="Repeat the workflow N times (for testing/dry-run)")
+    parser.add_argument(
+        "--output",
+        default="data/raw/student_scores.csv",
+        help="Output file path (default: data/raw/student_scores.csv)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Do not modify files or run retrain; show what would happen",
+    )
+    parser.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        help="Repeat the workflow N times (for testing/dry-run)",
+    )
 
     args = parser.parse_args()
 
@@ -148,16 +169,26 @@ def main():
         if dry_run:
             # Skip file writes on dry run
             if args.mode == "append":
-                existing_df = pd.read_csv(output_file) if os.path.exists(output_file) else pd.DataFrame()
+                existing_df = (
+                    pd.read_csv(output_file)
+                    if os.path.exists(output_file)
+                    else pd.DataFrame()
+                )
                 new_df = pd.read_csv(new_file)
-                combined_df = pd.concat([existing_df, new_df], ignore_index=True).drop_duplicates()
-                print(f"[DRY RUN] Existing data rows: {len(existing_df)}, new data rows: {len(new_df)}")
+                combined_df = pd.concat(
+                    [existing_df, new_df], ignore_index=True
+                ).drop_duplicates()
+                print(
+                    f"[DRY RUN] Existing data rows: {len(existing_df)}, new data rows: {len(new_df)}"
+                )
                 print(f"[DRY RUN] Combined data rows (dedup): {len(combined_df)}")
             else:
                 combined_df = pd.read_csv(new_file)
                 print(f"[DRY RUN] Replace mode - new data rows: {len(combined_df)}")
 
-            print(f"[DRY RUN] Would upload combined raw data to S3: s3://{S3_BUCKET}/{NEW_RAW_DATA_KEY}")
+            print(
+                f"[DRY RUN] Would upload combined raw data to S3: s3://{S3_BUCKET}/{NEW_RAW_DATA_KEY}"
+            )
             if not run_retrain_if_needed(len(combined_df), dry_run=True):
                 success = False
                 break
@@ -196,7 +227,9 @@ def main():
 
         try:
             upload_file(output_file, S3_BUCKET, NEW_RAW_DATA_KEY)
-            print(f"[OK] Uploaded new raw data snapshot to S3: s3://{S3_BUCKET}/{NEW_RAW_DATA_KEY}")
+            print(
+                f"[OK] Uploaded new raw data snapshot to S3: s3://{S3_BUCKET}/{NEW_RAW_DATA_KEY}"
+            )
         except Exception as e:
             print(f"[WARNING] Could not upload combined raw data to S3: {e}")
 
@@ -212,6 +245,7 @@ def main():
         print(f"  4. python src/model/train.py                (retrain & upload model)")
 
     return success
+
 
 if __name__ == "__main__":
     success = main()

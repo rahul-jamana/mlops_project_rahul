@@ -14,6 +14,7 @@ import os
 import sys
 import subprocess
 
+
 def run_command(cmd, description):
     """Run a command in myenv and report status"""
     print(f"\n{'='*60}")
@@ -31,12 +32,13 @@ def run_command(cmd, description):
         print(f"[ERROR] {description} failed!")
         return False
 
+
 def retrain_pipeline():
     """Complete retraining pipeline"""
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("COMPLETE RETRAINING PIPELINE WITH S3")
-    print("="*60)
+    print("=" * 60)
 
     steps = [
         ("python scripts/upload_raw_data.py", "1. Upload new raw data to S3"),
@@ -71,6 +73,7 @@ def retrain_pipeline():
     else:
         print("✗ Pipeline failed. Check errors above.")
         return False
+
 
 if __name__ == "__main__":
     success = retrain_pipeline()

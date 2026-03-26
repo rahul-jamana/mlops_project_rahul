@@ -10,7 +10,13 @@ import json
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from src.utils.s3_utils import download_file
-from src.utils.s3_config import MODEL_PATH, MODEL_KEY, MODEL_META_PATH, MODEL_META_KEY, S3_BUCKET
+from src.utils.s3_config import (
+    MODEL_PATH,
+    MODEL_KEY,
+    MODEL_META_PATH,
+    MODEL_META_KEY,
+    S3_BUCKET,
+)
 
 # Create FastAPI app with detailed information
 app = FastAPI(
@@ -21,6 +27,7 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+
 # Request model with validation
 class PredictionRequest(BaseModel):
     hours: float = Field(
@@ -29,19 +36,28 @@ class PredictionRequest(BaseModel):
         le=24,
         title="Study Hours",
         description="Number of hours studied (0-24)",
-        example=5.0
+        example=5.0,
     )
+
 
 # Response model
 class PredictionResponse(BaseModel):
     hours: float = Field(..., title="Study Hours", description="Input study hours")
-    predicted_score: float = Field(..., title="Predicted Score", description="Model's predicted student score")
-    model_version: str = Field(..., title="Model Version", description="Version of the model used")
+    predicted_score: float = Field(
+        ..., title="Predicted Score", description="Model's predicted student score"
+    )
+    model_version: str = Field(
+        ..., title="Model Version", description="Version of the model used"
+    )
+
 
 class HealthResponse(BaseModel):
     status: str = Field(..., title="Status", description="API health status")
     model: str = Field(..., title="Model Status", description="Model loading status")
-    s3_bucket: str = Field(..., title="S3 Bucket", description="S3 bucket used for model storage")
+    s3_bucket: str = Field(
+        ..., title="S3 Bucket", description="S3 bucket used for model storage"
+    )
+
 
 def load_model():
     """Load model and metadata from S3 if available, otherwise use local files"""
@@ -57,7 +73,9 @@ def load_model():
         print(f"[INFO] Using local model: {MODEL_PATH}")
 
     try:
-        print(f"[INFO] Downloading model metadata from S3: s3://{S3_BUCKET}/{MODEL_META_KEY}")
+        print(
+            f"[INFO] Downloading model metadata from S3: s3://{S3_BUCKET}/{MODEL_META_KEY}"
+        )
         download_file(S3_BUCKET, MODEL_META_KEY, MODEL_META_PATH)
     except Exception as e:
         print(f"[WARNING] Could not download model metadata from S3: {e}")
@@ -81,6 +99,7 @@ def load_model():
 # Load model at startup
 model, model_version = load_model()
 
+
 @app.post(
     "/predict",
     response_model=PredictionResponse,
@@ -89,14 +108,10 @@ model, model_version = load_model()
     responses={
         200: {
             "description": "Successful prediction",
-            "example": {
-                "hours": 5.0,
-                "predicted_score": 55.2,
-                "model_version": "1.0"
-            }
+            "example": {"hours": 5.0, "predicted_score": 55.2, "model_version": "1.0"},
         },
-        422: {"description": "Invalid input (hours must be 0-24)"}
-    }
+        422: {"description": "Invalid input (hours must be 0-24)"},
+    },
 )
 def predict(request: PredictionRequest):
     """
@@ -108,18 +123,14 @@ def predict(request: PredictionRequest):
     """
     hours = request.hours
 
-    df = pd.DataFrame({
-        "Hours": [hours],
-        "hours_squared": [hours**2]
-    })
+    df = pd.DataFrame({"Hours": [hours], "hours_squared": [hours**2]})
 
     predicted_score = float(model.predict(df)[0])
 
     return PredictionResponse(
-        hours=hours,
-        predicted_score=predicted_score,
-        model_version=model_version
+        hours=hours, predicted_score=predicted_score, model_version=model_version
     )
+
 
 @app.get(
     "/health",
@@ -132,10 +143,10 @@ def predict(request: PredictionRequest):
             "example": {
                 "status": "healthy",
                 "model": "loaded",
-                "s3_bucket": "mlops-student"
-            }
+                "s3_bucket": "mlops-student",
+            },
         }
-    }
+    },
 )
 def health_check():
     """
@@ -146,32 +157,18 @@ def health_check():
     - **model**: Whether the model is loaded
     - **s3_bucket**: S3 bucket used for model storage
     """
-    return HealthResponse(
-        status="healthy",
-        model="loaded",
-        s3_bucket=S3_BUCKET
-    )
+    return HealthResponse(status="healthy", model="loaded", s3_bucket=S3_BUCKET)
 
-@app.post(
-    "/reload",
-    tags=["System"],
-    summary="Reload model from S3"
-)
+
+@app.post("/reload", tags=["System"], summary="Reload model from S3")
 def reload_model():
     """Force reloading the latest model from S3 without restarting the app."""
     global model, model_version
     model, model_version = load_model()
-    return {
-        "status": "reloaded",
-        "model_version": model_version
-    }
+    return {"status": "reloaded", "model_version": model_version}
 
 
-@app.get(
-    "/",
-    tags=["Info"],
-    summary="API Information"
-)
+@app.get("/", tags=["Info"], summary="API Information")
 def root():
     """
     Welcome endpoint with API information.
@@ -186,6 +183,6 @@ def root():
             "predict": "POST /predict - Predict student score",
             "health": "GET /health - Check API health",
             "docs": "GET /docs - Swagger UI documentation",
-            "redoc": "GET /redoc - ReDoc documentation"
-        }
+            "redoc": "GET /redoc - ReDoc documentation",
+        },
     }
