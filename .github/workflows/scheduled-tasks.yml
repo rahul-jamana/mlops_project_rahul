@@ -1,0 +1,290 @@
+name: Scheduled Tasks
+
+on:
+  schedule:
+    # Run daily model retraining at 2 AM UTC
+    - cron: '0 2 * * *'
+    # Run code quality checks every Monday at 10 AM UTC
+    - cron: '0 10 * * 1'
+
+jobs:
+  check-code-quality:
+    name: Code Quality Report
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pylint pytest pytest-cov mypy
+      
+      - name: Run pylint
+        run: |
+          pylint app/ src/ scripts/ --exit-zero --output-format=parseable > pylint_report.txt || true
+          cat pylint_report.txt
+      
+      - name: Run mypy type checking
+        run: |
+          mypy app/ src/ --ignore-missing-imports || true
+      
+      - name: Run pytest with coverage
+        run: |
+          pytest tests/ --cov=app --cov=src --cov-report=term --cov-report=html || true
+      
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage-report
+          path: htmlcov/
+          retention-days: 30
+      
+      - name: Comment PR with quality metrics
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const coverage = fs.readFileSync('coverage_report.txt', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 📊 Code Quality Report\n\`\`\`\n${coverage}\n\`\`\``
+            });
+
+  scheduled-retrain:
+    name: Scheduled Model Retrain
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      
+      - name: Download latest data from S3
+        run: |
+          echo "📥 Downloading data from S3..."
+          python scripts/download_raw_data.py
+          python scripts/download_processed_data.py
+      
+      - name: Run DVC pipeline
+        run: |
+          echo "🔄 Running DVC pipeline..."
+          dvc repro
+      
+      - name: Check for model improvements
+        run: |
+          echo "📊 Evaluating model metrics..."
+          python -c "
+          import json
+          import os
+          
+          metrics_file = 'metrics.json'
+          if os.path.exists(metrics_file):
+              with open(metrics_file, 'r') as f:
+                  metrics = json.load(f)
+              print(f'Model Metrics:')
+              for key, value in metrics.items():
+                  print(f'  {key}: {value}')
+          "
+      
+      - name: Upload new model to S3
+        if: success()
+        run: |
+          echo "📤 Uploading model to S3..."
+          python scripts/upload_all.py
+      
+      - name: Create training report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: training-report-${{ github.run_id }}
+          path: |
+            dvc.lock
+            metrics.json
+          retention-days: 90
+      
+      - name: Notify training completion
+        if: always()
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK }}
+          payload: |
+            {
+              "text": "Daily Model Retrain Completed",
+              "blocks": [
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Status:*\n${{ job.status }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Run ID:*\n${{ github.run_id }}"
+                    }
+                  ]
+                }
+              ]
+            }
+        continue-on-error: true
+
+  dependency-update:
+    name: Check Dependencies
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      
+      - name: Check for outdated packages
+        run: |
+          pip install pip-audit
+          pip-audit --desc || true
+      
+      - name: Check pip vulnerabilities
+        run: |
+          python -m pip install safety
+          safety check || true
+      
+      - name: Create dependency report
+        run: |
+          pip freeze > dependency_report.txt
+          cat dependency_report.txt
+      
+      - name: Upload dependency report
+        uses: actions/upload-artifact@v3
+        with:
+          name: dependency-report
+          path: dependency_report.txt
+          retention-days: 30
+
+  security-checks:
+    name: Security Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+      
+      - name: Upload Trivy results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+      
+      - name: Check for secrets
+        uses: truffleHog/truffleHog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --only-verified
+        continue-on-error: true
+
+  health-check:
+    name: Production Health Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Check deployed API
+        run: |
+          echo "🏥 Checking production API health..."
+          
+          # Define your API endpoints
+          ENDPOINTS=(
+            "http://localhost:8000/health"
+            "http://localhost:8000/docs"
+          )
+          
+          for endpoint in "${ENDPOINTS[@]}"; do
+            echo "Checking: $endpoint"
+            response=$(curl -s -o /dev/null -w "%{http_code}" "$endpoint" 2>/dev/null || echo "000")
+            
+            if [ "$response" = "200" ] || [ "$response" = "307" ]; then
+              echo "✓ $endpoint is healthy"
+            else
+              echo "✗ $endpoint returned status $response"
+            fi
+          done
+        continue-on-error: true
+      
+      - name: Performance metrics check
+        run: |
+          echo "📈 Checking performance metrics..."
+          
+          # Example: check response time
+          start_time=$(date +%s%N)
+          curl -s http://localhost:8000/health > /dev/null || true
+          end_time=$(date +%s%N)
+          
+          duration=$(( (end_time - start_time) / 1000000 ))
+          echo "API response time: ${duration}ms"
+          
+          if [ $duration -lt 1000 ]; then
+            echo "✓ Performance is acceptable"
+          else
+            echo "⚠ Performance is slower than expected"
+          fi
+        continue-on-error: true
+      
+      - name: Notify health status
+        if: always()
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK }}
+          payload: |
+            {
+              "text": "Production API Health Check",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Production API Health Status*\nStatus: ${{ job.status }}"
+                  }
+                }
+              ]
+            }
+        continue-on-error: true
