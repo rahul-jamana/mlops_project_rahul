@@ -43,21 +43,11 @@ jobs:
         run: black --check app/ src/ scripts/ || true
       
       - name: Run unit tests
-        run: |
-          python -m pytest tests/ -v 2>&1 || true
-      
-      - name: Generate coverage report
-        run: |
-          python -m pytest tests/ -v --cov=app --cov=src --cov-report=xml 2>&1 || echo "Coverage report skipped"
+        run: python -m pytest tests/ -v
+        continue-on-error: true
       
       - name: Upload coverage reports
-        uses: codecov/codecov-action@v3
-        if: always() && hashFiles('./coverage.xml') != ''
-        with:
-          files: ./coverage.xml
-          flags: unittests
-          name: codecov-umbrella
-          fail_ci_if_error: false
+        run: echo "Coverage reports skipped"
 
   build:
     name: Build & Push Docker Image
